@@ -1,0 +1,78 @@
+name: Rendu final (voix + vidéo) → mail de validation
+
+# Dépôt PUBLIC = minutes GitHub Actions illimitées : c'est ici que tourne le rendu lourd (~20 min).
+# Déclenché par le dépôt privé reels-factory (repository_dispatch « rendu ») avec l'identifiant de la vidéo.
+on:
+  repository_dispatch:
+    types: [rendu]
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Identifiant de la vidéo (ex. actu-20261018-0020)"
+        required: true
+
+concurrency:
+  group: rendu
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # pour publier la vidéo en « release » dans ce dépôt
+
+jobs:
+  rendu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      JOB: ${{ github.event.client_payload.job || inputs.job }}
+    steps:
+      - name: Récupérer le projet (dépôt privé)
+        uses: actions/checkout@v4
+        with:
+          repository: StudioDecodeDiffusion/reels-factory
+          token: ${{ secrets.GH_PAT }}
+          ref: main
+          path: factory
+      - name: Récupérer le dépôt de la vidéo
+        uses: actions/checkout@v4
+        with:
+          repository: StudioDecodeDiffusion/reels-factory
+          token: ${{ secrets.GH_PAT }}
+          ref: depot-videos
+          path: factory/_depot
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/decode-voix
+            ~/.cache/huggingface
+            ~/.cache/pip
+          key: voix-v3
+      - name: Installer le moteur vidéo et les voix
+        working-directory: factory
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg espeak-ng
+          pip install -q -r requirements.txt piper-tts kokoro-onnx soundfile
+          pip install -q torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -q chatterbox-tts
+          cd video && npm ci --no-audit --no-fund && npx remotion browser ensure
+      - name: Voix, rendu final, mail de validation (agent 9)
+        working-directory: factory
+        env:
+          GMAIL_ADDRESS: ${{ vars.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          MEDIA_REPO: ${{ github.repository }}
+        run: python -m pipeline.github_flow rendre _depot/drop "$JOB"
+      - name: Sauvegarder la mémoire dans le dépôt privé
+        if: always()
+        working-directory: factory
+        run: |
+          git config user.name "reels-bot"
+          git config user.email "reels-bot@users.noreply.github.com"
+          git add state/
+          git diff --cached --quiet || (git commit -m "état : rendu $JOB" && for i in 1 2 3 4 5; do git pull --rebase -q && git push -q && break; sleep $((i*4)); done)
