@@ -75,4 +75,4 @@ jobs:
           git config user.name "reels-bot"
           git config user.email "reels-bot@users.noreply.github.com"
           git add state/
-          git diff --cached --quiet || (git commit -m "état : rendu $JOB" && for i in 1 2 3 4 5; do git pull --rebase -q && git push -q && break; sleep $((i*4)); done)
+          git diff --cached --quiet || (git commit -m "état : rendu $JOB" && for i in 1 2 3 4 5; do git pull --rebase -X theirs -q && git push -q && break; sleep $((i*4)); done)
