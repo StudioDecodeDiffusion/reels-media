@@ -11,8 +11,9 @@ on:
         description: "Identifiant de la vidéo (ex. actu-20261018-0020)"
         required: true
 
+# un groupe par vidéo : plusieurs rendus tournent en parallèle sans s'annuler
 concurrency:
-  group: rendu
+  group: rendu-${{ github.event.client_payload.job || inputs.job }}
   cancel-in-progress: false
 
 permissions:
