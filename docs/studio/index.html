@@ -18,6 +18,9 @@
   aside h2{font-size:12px;margin:8px 0 6px;color:var(--jaune);text-transform:uppercase;letter-spacing:.07em}
   .ev{border-bottom:1px solid #252a36;padding:5px 0;font-size:12.5px}.ev i{color:var(--gris);font-style:normal}
   #info{font-size:13px}#info small{color:var(--gris)}
+  .k{display:grid;grid-template-columns:52px repeat(7,1fr);gap:2px;font-size:10.5px;margin-bottom:2px}
+  .k div{background:#1e2330;border-radius:3px;padding:3px 2px;text-align:center;color:#6d7385}
+  .k .on{background:#ffd23f;color:#111;font-weight:700}.k .h{background:none;color:#8a90a0;text-align:left}
   footer{color:var(--gris);font-size:11px;padding:0 16px 16px}
 </style>
 </head>
@@ -32,6 +35,7 @@
       <button id="env" style="margin-top:6px;width:100%;padding:8px;border:0;border-radius:6px;background:#ffd23f;color:#111;font-weight:700;cursor:pointer">Envoyer</button>
       <small style="color:#8a90a0">S'ouvre dans Gmail, depuis la boîte du studio : appuie sur Envoyer. L'agent le lit au prochain passage (≤ 30 min) et te répond dans le journal de 20 h 40.</small>
     </div>
+    <h2>Tâches par compte</h2><div id="taches"></div>
     <h2>Journal du studio</h2><div id="journal"></div>
   </aside>
 </main>
@@ -73,7 +77,7 @@ cv.width=COLS*TS*SC; cv.height=NF*FH*TS*SC; cx.imageSmoothingEnabled=false; cx.s
 const IM={}; const noms=['char_0','char_1','char_2','char_3','char_4','char_5','floor_1','floor_2','floor_4','floor_6','DESK_FRONT','PC_BACK',
  'WOODEN_CHAIR_FRONT','TABLE_FRONT','WHITEBOARD','LARGE_PLANT','PLANT','BOOKSHELF','COFFEE','CLOCK','SOFA_FRONT','SMALL_PAINTING'];
 const yEtage=f=>(NF-1-f)*FH*TS;
-let fond=null, data={agents:{},journal:[]}, P={}, dernier=performance.now();
+let fond=null, data={agents:{},journal:[]}, P={}, dernier=performance.now(), vu=null, envois=[];
 
 function teinte(img,col,a){const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const g=c.getContext('2d');
   g.drawImage(img,0,0);g.globalCompositeOperation='multiply';g.globalAlpha=a;g.fillStyle=col;g.fillRect(0,0,c.width,c.height);
@@ -108,7 +112,8 @@ function siege(salle,i){for(const f in ETAGES)for(const p of ETAGES[f].pieces) i
   const cxm=(p.x+p.w/2)*TS,Y=yEtage(+f), pl=[[-42,44],[26,44],[-42,72],[26,72],[-20,30],[4,30],[-20,96],[4,96]][i%8];
   return {f:+f,x:cxm+pl[0],y:Y+pl[1],reu:1}} return null}
 function actifS(s){return s&&(Date.now()-Date.parse(s.depuis))/60000<45&&!/^(fini|libre|termin)/i.test(s.etat)}
-function cible(a){const s=data.agents[a];
+function cible(a){const m=P[a]&&P[a].mission;if(m){if(performance.now()<m.fin)return m.pos;P[a].mission=null}
+  const s=data.agents[a];
   if(actifS(s)&&(s.salle||'').startsWith('reunion')){const pres=Object.keys(data.agents).filter(k=>AG[k]&&data.agents[k].salle===s.salle&&actifS(data.agents[k]));
     return siege(s.salle,Math.max(0,pres.indexOf(a)))||bureau(a)}
   const b=bureau(a);return {f:b.f,x:b.x+16,y:b.y-8}}
@@ -135,6 +140,7 @@ function image(t){
     for(let i=1;i<p.w-1;i++){cx.fillStyle=((i+Math.floor(t/200))%2)?'#4a4f5c':'#6a7082';cx.fillRect((p.x+i)*TS,Y,TS,6)}}
   for(const f in ETAGES)for(const p of ETAGES[f].pieces) if(p.dep==='reu'&&Object.entries(data.agents).some(([k,v])=>AG[k]&&v.salle===p.id&&actifS(v))){
     cx.fillStyle=Math.floor(t/500)%2?'#ff5a5a':'#9e2b2b';cx.fillRect((p.x+p.w)*TS-12,yEtage(+f)+6,6,6)}
+  if(!Object.keys(P).length){requestAnimationFrame(image);return}
   const ordre=Object.keys(AG).sort((a,b)=>P[a].y-P[b].y);
   for(const a of ordre){avancer(a,dt)}
   for(const a of ordre){const p=P[a],b=bureau(a),aBureau=!p.marche&&!p.reu&&Math.abs(p.x-(b.x+16))<2;
@@ -144,6 +150,13 @@ function image(t){
     cx.fillText(String(a).padStart(2,' '),Math.round(p.x)+2,Math.round(p.y)+40)}
   for(const a of ordre){const s=data.agents[a],p=P[a];if(actifS(s)&&!p.marche){
     if(p.reu){if(Math.floor(t/2500)%Object.keys(data.agents).length===Object.keys(data.agents).indexOf(a)) bulle(p.x,p.y,'…')} else bulle(p.x,p.y,s.etat)}}
+  for(const e of envois){const k=(t-e.debut)/2200;if(k<0||k>1)continue;const A=bureau(e.de),B=bureau(e.vers);
+    const x=A.x+16+(B.x-A.x)*k,y=A.y+(B.y-A.y)*k-Math.sin(k*Math.PI)*40;
+    cx.fillStyle='#fff';cx.fillRect(x,y,12,8);cx.fillStyle='#c9c2b0';cx.fillRect(x,y,12,1);cx.fillRect(x,y,1,8);
+    cx.beginPath();cx.moveTo(x,y);cx.lineTo(x+6,y+5);cx.lineTo(x+12,y);cx.strokeStyle='#b8ad94';cx.stroke();cx.fillStyle='#e5133a';cx.fillRect(x+5,y+4,3,3)}
+  envois=envois.filter(e=>t-e.debut<2400);
+  for(const a in AG){const v=(data.budgets||{})[a];if(v==null)continue;const b=bureau(a),w=Math.min(1,v/100);
+    cx.fillStyle='#111';cx.fillRect(b.x+4,b.y+46,40,3);cx.fillStyle=v>=100?'#e5133a':v>=80?'#ffa24c':'#41c98b';cx.fillRect(b.x+4,b.y+46,40*w,3)}
   requestAnimationFrame(image)}
 cv.addEventListener('click',ev=>{const k=cv.width/SC/cv.clientWidth,x=ev.offsetX*k,y=ev.offsetY*k;
   for(const a in P){const p=P[a];if(x>p.x-4&&x<p.x+20&&y>p.y&&y<p.y+42){const s=data.agents[a];
@@ -157,6 +170,13 @@ async function charger(){
   for(const u of SRC){try{const r=await fetch(u+(u.includes('raw')?'?t='+Date.now():''),{cache:'no-store'});if(!r.ok)continue;
     const j=await r.json();data=j.content?JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(j.content.replace(/\n/g,'')),c=>c.charCodeAt(0)))):j;break}catch(e){}}
   data.agents=data.agents||{};
+  const nouveaux=(data.journal||[]).filter(e=>e.vers&&AG[e.agent]&&AG[e.vers]&&(!vu||e.t>vu));
+  if(vu!==null) nouveaux.forEach((e,i)=>{const now=performance.now()+i*2600;envois.push({de:e.agent,vers:e.vers,debut:now});
+    if(P[e.agent]&&AG[e.agent].f===AG[e.vers].f){const B=bureau(e.vers);P[e.agent].mission={pos:{f:B.f,x:B.x-12,y:B.y-6},fin:now+5000}}});
+  vu=(data.journal||[]).reduce((m,e)=>e.t>m?e.t:m,vu||'');
+  const ET=['veille','concept','scénario','DA','critique','génération','publication'];
+  document.getElementById('taches').innerHTML='<div class="k"><div class="h"></div>'+ET.map(e=>`<div class="h" style="text-align:center">${e.slice(0,5)}</div>`).join('')+'</div>'+
+    Object.entries(data.taches||{}).map(([c,v])=>`<div class="k"><div class="h">${c}</div>${ET.map(e=>`<div class="${e===v.etape?'on':''}">${e===v.etape?'●':''}</div>`).join('')}</div>`).join('')||'<small style="color:#8a90a0">Aucune vidéo en cours.</small>';
   document.getElementById('maj').textContent=data.maj?'dernière activité '+new Date(data.maj).toLocaleString('fr-FR',{weekday:'short',hour:'2-digit',minute:'2-digit'})+' · actualisé chaque minute':'en attente de la première activité';
   document.getElementById('journal').innerHTML=(data.journal||[]).slice().reverse().slice(0,30).map(e=>
     `<div class="ev"><i>${new Date(e.t).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</i> · ${AG[e.agent]?AG[e.agent].nom+' ('+e.agent+')':'agent '+e.agent} : ${e.etat}${e.compte?' · '+e.compte:''}</div>`).join('')}
