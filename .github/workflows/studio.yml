@@ -1,0 +1,28 @@
+name: Construire le Studio en direct
+
+# Reconstruit la page à partir de la dernière version de pixel-agents (MIT) + notre plan et notre adaptateur.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+  push:
+    paths: ["studio-src/**"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: bash studio-src/build.sh
+      - run: |
+          git config user.name "reels-bot"
+          git config user.email "reels-bot@users.noreply.github.com"
+          git add docs/studio studio-src
+          git diff --cached --quiet || (git commit -m "studio : reconstruit depuis pixel-agents" && git pull --rebase -q && git push -q)

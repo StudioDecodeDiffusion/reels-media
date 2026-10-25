@@ -1,2 +1,0 @@
-Ressources graphiques reprises de pixel-agents (Pablo De Lucca, licence MIT, voir LICENSE-pixel-agents.txt).
-Personnages basés sur le Metro City free top-down character pack de JIK-A-4 (https://jik-a-4.itch.io/metrocity-free-topdown-character-pack).
