@@ -27,6 +27,11 @@
   <canvas id="c"></canvas>
   <aside>
     <h2>Agent sélectionné</h2><div id="info">Touchez un personnage pour voir son rôle et ce qu'il fait.</div>
+    <div id="discuter" style="display:none;margin-top:8px">
+      <textarea id="msg" rows="3" style="width:100%;box-sizing:border-box;background:#0e1016;color:#ece8dd;border:1px solid #2c3242;border-radius:6px;padding:6px;font:inherit" placeholder="Ton message à cet agent…"></textarea>
+      <button id="env" style="margin-top:6px;width:100%;padding:8px;border:0;border-radius:6px;background:#ffd23f;color:#111;font-weight:700;cursor:pointer">Envoyer</button>
+      <small style="color:#8a90a0">S'ouvre dans Gmail, depuis la boîte du studio : appuie sur Envoyer. L'agent le lit au prochain passage (≤ 30 min) et te répond dans le journal de 20 h 40.</small>
+    </div>
     <h2>Journal du studio</h2><div id="journal"></div>
   </aside>
 </main>
@@ -142,7 +147,12 @@ function image(t){
   requestAnimationFrame(image)}
 cv.addEventListener('click',ev=>{const k=cv.width/SC/cv.clientWidth,x=ev.offsetX*k,y=ev.offsetY*k;
   for(const a in P){const p=P[a];if(x>p.x-4&&x<p.x+20&&y>p.y&&y<p.y+42){const s=data.agents[a];
+    sel=a;document.getElementById('discuter').style.display='block';document.getElementById('env').textContent='Envoyer à l\'agent '+a+' · '+AG[a].nom;
     document.getElementById('info').innerHTML=`<b>Agent ${a} · ${AG[a].nom}</b><br>${AG[a].role}<br><small>${s?`${s.etat}${s.compte?' · compte '+s.compte:''} · ${new Date(s.depuis).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`:'Pas encore d\'activité aujourd\'hui.'}</small>`;return}}});
+let sel=null;
+document.getElementById('env').addEventListener('click',()=>{const t=document.getElementById('msg').value.trim();if(!t||sel===null)return;
+  const sujet=`agent ${sel} - ${t.split('\n')[0].slice(0,80)}`;
+  window.open('https://mail.google.com/mail/?view=cm&authuser=studiodecodediffusion@gmail.com&to=studiodecodediffusion@gmail.com&su='+encodeURIComponent(sujet)+'&body='+encodeURIComponent(t),'_blank')});
 async function charger(){
   for(const u of SRC){try{const r=await fetch(u+(u.includes('raw')?'?t='+Date.now():''),{cache:'no-store'});if(!r.ok)continue;
     const j=await r.json();data=j.content?JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(j.content.replace(/\n/g,'')),c=>c.charCodeAt(0)))):j;break}catch(e){}}
