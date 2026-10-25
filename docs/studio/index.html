@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Décodé Studio · en direct</title>
+<!-- Inspiré de pixel-agents (pablodelucca, MIT) : les agents du studio en pixel art, en temps réel. -->
+<style>
+  :root{--fond:#0f1218;--carte:#171b24;--texte:#e9e6dc;--gris:#8a90a0;--jaune:#ffd23f}
+  body{margin:0;background:var(--fond);color:var(--texte);font:14px/1.45 system-ui,sans-serif}
+  header{padding:14px 16px 6px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}
+  h1{font-size:18px;margin:0}h1 b{color:var(--jaune)}
+  #maj{color:var(--gris);font-size:12px}
+  main{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;padding:0 16px 16px}
+  @media(max-width:860px){main{grid-template-columns:1fr}}
+  canvas{width:100%;image-rendering:pixelated;background:#000;border-radius:6px;display:block}
+  aside{background:var(--carte);border-radius:6px;padding:10px 12px;max-height:80vh;overflow:auto}
+  aside h2{font-size:13px;margin:6px 0;color:var(--jaune);text-transform:uppercase;letter-spacing:.06em}
+  .ev{border-bottom:1px solid #262b38;padding:5px 0;font-size:12.5px}.ev i{color:var(--gris);font-style:normal}
+  .leg{font-size:12px;color:var(--gris);margin:2px 0}
+  #info{min-height:40px;font-size:13px}
+</style>
+</head>
+<body>
+<header><h1>Décodé <b>Studio</b> · en direct</h1><span id="maj">chargement…</span></header>
+<main>
+  <canvas id="c" width="512" height="456"></canvas>
+  <aside>
+    <h2>Sélection</h2><div id="info">Touchez un agent pour voir son rôle.</div>
+    <h2>Journal</h2><div id="journal"></div>
+  </aside>
+</main>
+<script>
+const T=8, W=64;                      // tuiles de 8 px, 64 de large
+const SRC=['https://api.github.com/repos/StudioDecodeDiffusion/reels-media/contents/studio/activite.json',
+           'https://raw.githubusercontent.com/StudioDecodeDiffusion/reels-media/main/studio/activite.json'];
+const DEP={mgmt:'#e5133a',veille:'#3d5afe',art:'#8e5cff',prod:'#ff8a1f',rd:'#2ec878',acc:'#ffd23f'};
+// étages de bas (0) en haut (3) ; y = ligne de tuile du sol de l'étage
+const ETAGES=[
+ {n:3,nom:'Étage 3 · R&D',y:0, pieces:[{nom:'R&D',x:1,w:40,dep:'rd'},{nom:'Réunion R&D',x:42,w:21,reu:'reunion-3'}]},
+ {n:2,nom:'Étage 2 · Production (chaîne)',y:14, pieces:[{nom:'Production',x:1,w:40,dep:'prod',chaine:true},{nom:'Réunion production',x:42,w:21,reu:'reunion-2'}]},
+ {n:1,nom:'Étage 1 · Veille et artistique',y:28, pieces:[{nom:'Veille',x:1,w:19,dep:'veille'},{nom:'Réu. veille',x:21,w:10,reu:'reunion-1-veille'},
+   {nom:'Artistique',x:32,w:20,dep:'art'},{nom:'Réu. art.',x:53,w:10,reu:'reunion-1-art'}]},
+ {n:0,nom:'Étage 0 · Accueil et management',y:42, pieces:[{nom:'Accueil',x:1,w:12,dep:'acc'},{nom:'Management général',x:14,w:32,dep:'mgmt'},{nom:'Réunion générale',x:47,w:16,reu:'reunion-0'}]},
+];
+const AG={ // bureau : étage, x (tuile)
+ 0:{nom:'Secrétaire',dep:'acc',e:0,x:6,sous:'reçoit tes messages, te répond, transmet à l\'agent 14'},
+ 15:{nom:'Manager',dep:'mgmt',e:0,x:17,sous:'organise les réunions et les validations de chaque étage'},
+ 14:{nom:'Coordinateur',dep:'mgmt',e:0,x:23,sous:'fluidifie les échanges, modifie les agents selon tes demandes'},
+ 9:{nom:'Community manager',dep:'mgmt',e:0,x:29,sous:'commentaires, publication, état des comptes'},
+ 10:{nom:'Stratégie monétaire',dep:'mgmt',e:0,x:35,sous:'croissance et monétisation'},
+ 3:{nom:'Chiffres',dep:'mgmt',e:0,x:41,sous:'3.1 à 3.5 : un par compte'},
+ 1:{nom:'Veille actu',dep:'veille',e:1,x:3,sous:'1.1 à 1.5 : un par compte'},
+ 2:{nom:'Tendances Instagram',dep:'veille',e:1,x:9,sous:'2.1 à 2.5 : un par compte'},
+ 13:{nom:'Tendances TikTok',dep:'veille',e:1,x:15,sous:'veille TikTok France'},
+ 6:{nom:'Direction artistique',dep:'art',e:1,x:37,sous:'6.1 son · 6.2 voix · 6.3 couleurs · 6.4 animations'},
+ 7:{nom:'Critique',dep:'art',e:1,x:45,sous:'7.1 concept · 7.2 tendance · 7.3 corrélation veille/tendances · 7.4 avant génération · 7.5 après génération'},
+ 4:{nom:'Concept',dep:'prod',e:2,x:6,sous:'1er poste de la chaîne'},
+ 5:{nom:'Scénario',dep:'prod',e:2,x:19,sous:'2e poste de la chaîne'},
+ 8:{nom:'Générateur',dep:'prod',e:2,x:32,sous:'3e poste : spec, rendu de contrôle, dépôt'},
+ 11:{nom:'Veille comptes IA',dep:'rd',e:3,x:8,sous:'comptes qui percent'},
+ 12:{nom:'Rétro-ingénierie',dep:'rd',e:3,x:24,sous:'12.1 images · 12.2 son · 12.3 légendes, stats'},
+};
+const cv=document.getElementById('c'),cx=cv.getContext('2d');
+let data={agents:{},journal:[]}, pos={}, t0=performance.now();
+const etg=n=>ETAGES.find(e=>e.n===n);
+function r(x,y,w,h,c){cx.fillStyle=c;cx.fillRect(x,y,w,h)}
+function txt(s,x,y,c,sz){cx.fillStyle=c;cx.font=(sz||6)+'px monospace';cx.fillText(s,x,y)}
+function decor(){
+  for(const e of ETAGES){
+    const Y=e.y*T;
+    r(0,Y,W*T,14*T,'#1b1f2a'); r(0,Y+13*T,W*T,T,'#2a2f3d');               // mur + sol
+    for(const p of e.pieces){
+      const X=p.x*T;
+      r(X,Y+2*T,p.w*T,11*T,p.reu?'#2b2433':'#232838');                   // sol de la pièce
+      for(let i=0;i<p.w;i+=2)for(let j=2;j<13;j+=2) r(X+i*T,Y+j*T,T,T,p.reu?'#2f2838':'#262b3c');
+      r(X,Y+2*T,p.w*T,2,p.dep?DEP[p.dep]:'#c59bff');                      // liseré couleur du département
+      txt(p.nom,X+3,Y+2*T+9,'#cfd3dc',6); if(p.reu&&Object.values(data.agents).some(v=>v.salle===p.reu&&(Date.now()-Date.parse(v.depuis))/60000<45)){r(X+p.w*T-14,Y+2*T+4,6,6,(performance.now()/500|0)%2?'#ff4f4f':'#a33');txt('réunion',X+3,Y+12*T,'#ffb4b4',6)}
+      if(p.reu){ r(X+p.w*T/2-5*T,Y+7*T,10*T,3*T,'#6b4a2e'); r(X+p.w*T/2-5*T,Y+7*T,10*T,2,'#8a6240'); } // table
+      if(p.chaine){ for(let i=0;i<p.w-2;i++) r(X+T+i*T,Y+11*T,T-1,4,(i+Math.floor(performance.now()/180))%2?'#555':'#777'); txt('→',X+(p.w-2)*T,Y+11*T+5,'#ffd23f',7) }
+    }
+    txt(e.nom,4,Y+9,'#8a90a0',7);
+  }
+}
+function bureau(a){const e=etg(AG[a].e);return {x:AG[a].x*T,y:e.y*T+8*T}}
+function siegeReunion(a,salle,i){
+  for(const e of ETAGES)for(const p of e.pieces) if(p.reu===salle){const cxm=p.x*T+p.w*T/2;return {x:cxm-4*T+(i%4)*2*T,y:e.y*T+(i<4?5:10)*T}}
+  return null}
+function cible(a){
+  const s=data.agents[a]; if(!s) return bureau(a);
+  const vieux=(Date.now()-Date.parse(s.depuis))/60000>45;
+  if(s.salle&&s.salle.startsWith('reunion')&&!vieux){const n=Object.keys(data.agents).filter(k=>data.agents[k].salle===s.salle).indexOf(a);return siegeReunion(a,s.salle,Math.max(0,n))||bureau(a)}
+  return bureau(a)}
+function perso(a,x,y,actif,t){
+  const c=DEP[AG[a].dep], b=actif?Math.round(Math.sin(t/120+ +a)):0, k=2; x-=4; y-=10;
+  const p=(i,j,w,h,col)=>r(x+i*k,y+(j+b)*k,w*k,h*k,col);
+  r(x+2,y+19,12,2,'rgba(0,0,0,.35)');
+  p(2,5,4,4,c); p(1,6,1,2,c); p(6,6,1,2,c); p(2,1,4,4,'#f2c9a0'); p(2,0,4,2,'#3a2a20'); p(2,9,1,1,'#222'); p(5,9,1,1,'#222');
+  p(3,3,1,1,'#000'); p(5,3,1,1,'#000');
+  txt(String(a),x+5,y+28,'#fff',7)}
+function bulle(x,y,s){ if(!s) return; s=s.length>26?s.slice(0,25)+'…':s; cx.font='6px monospace';
+  const w=cx.measureText(s).width+6; r(x-2,y-12,w,9,'#fff'); r(x+2,y-3,3,2,'#fff'); txt(s,x+1,y-5,'#111',6)}
+function dessiner(t){
+  decor();
+  for(const a in AG){ const e=etg(AG[a].e), b=bureau(a);
+    if(!data.agents[a]||!(data.agents[a].salle||'').startsWith('reunion')) { r(b.x-3,b.y+6,16,5,'#6b4a2e'); r(b.x+1,b.y+1,8,5,'#0d1b2a'); r(b.x+2,b.y+2,6,3,(t/400|0)%2?'#4fc3f7':'#29b6f6'); }
+    const c=cible(a); pos[a]=pos[a]||{...c}; pos[a].x+=(c.x-pos[a].x)*0.06; pos[a].y+=(c.y-pos[a].y)*0.06;
+    const s=data.agents[a], actif=s&&(Date.now()-Date.parse(s.depuis))/60000<45&&!/fini|libre|termin/i.test(s.etat);
+    perso(a,Math.round(pos[a].x),Math.round(pos[a].y),actif,t);
+    if(actif&&!(s.salle||'').startsWith('reunion')) bulle(Math.round(pos[a].x)-4,Math.round(pos[a].y)-10,s.etat);
+  }
+  requestAnimationFrame(dessiner)}
+cv.addEventListener('click',ev=>{const k=cv.width/cv.clientWidth,x=ev.offsetX*k,y=ev.offsetY*k;
+  for(const a in pos){ if(Math.abs(pos[a].x+4-x)<9&&Math.abs(pos[a].y+6-y)<11){ const s=data.agents[a];
+    document.getElementById('info').innerHTML=`<b>Agent ${a} · ${AG[a].nom}</b><br>${AG[a].sous}<br><span class="leg">${s?`${s.etat} · ${s.compte||'tous comptes'} · ${new Date(s.depuis).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`:'pas encore d\'activité'}</span>`; return }}});
+async function charger(){
+  for(const u of SRC){ try{ const r=await fetch(u+(u.includes('raw')?'?t='+Date.now():''),{cache:'no-store'}); if(!r.ok) continue;
+      const j=await r.json(); data=j.content?JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,''))))):j; break }catch(e){} }
+  document.getElementById('maj').textContent=data.maj?'mis à jour '+new Date(data.maj).toLocaleString('fr-FR',{weekday:'short',hour:'2-digit',minute:'2-digit'})+' · actualisation chaque minute':'en attente de la première activité';
+  document.getElementById('journal').innerHTML=(data.journal||[]).slice().reverse().slice(0,25).map(e=>
+    `<div class="ev"><i>${new Date(e.t).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</i> · agent ${e.agent}${AG[e.agent]?' ('+AG[e.agent].nom+')':''} : ${e.etat}${e.compte?' · '+e.compte:''}</div>`).join('')}
+charger(); setInterval(charger,60000); requestAnimationFrame(dessiner);
+</script>
+</body>
+</html>
