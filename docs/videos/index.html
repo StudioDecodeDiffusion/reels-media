@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Décodé · vidéothèque</title>
+<style>
+  :root{--fond:#0e1016;--carte:#161a22;--texte:#ece8dd;--gris:#8a90a0;--jaune:#ffd23f}
+  body{margin:0;background:var(--fond);color:var(--texte);font:14px/1.45 system-ui,sans-serif}
+  header{padding:16px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+  h1{font-size:19px;margin:0}h1 b{color:var(--jaune)}
+  select,input{background:var(--carte);color:var(--texte);border:1px solid #2c3242;border-radius:6px;padding:6px 8px;font:inherit}
+  #grille{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;padding:0 16px 24px}
+  .v{background:var(--carte);border-radius:8px;overflow:hidden}
+  video{width:100%;aspect-ratio:9/16;background:#000;display:block}
+  .m{padding:8px 10px;font-size:12.5px}.m b{display:block;font-size:13px;margin-bottom:2px}.m span{color:var(--gris)}
+  .m a{color:var(--jaune)}
+  #vide{color:var(--gris);padding:0 16px}
+</style>
+</head>
+<body>
+<header><h1>Décodé · <b>vidéothèque</b></h1>
+  <select id="compte"><option value="">Tous les comptes</option></select>
+  <input id="q" placeholder="Rechercher un titre…"><span id="n" style="color:var(--gris)"></span></header>
+<div id="grille"></div><p id="vide"></p>
+<script>
+const API='https://api.github.com/repos/StudioDecodeDiffusion/reels-media/releases?per_page=100';
+let vids=[];
+function joli(s){return s.replace(/-/g,' ').replace(/^./,c=>c.toUpperCase())}
+async function charger(){
+  const rels=await (await fetch(API)).json();
+  for(const r of rels){ if(!r.tag_name.startsWith('archive-')) continue;
+    const mini={};for(const a of r.assets) if(a.name.endsWith('_miniature.png')) mini[a.name.replace('_miniature.png','')]=a.browser_download_url;
+    for(const a of r.assets) if(a.name.endsWith('_video.mp4')){const base=a.name.replace('_video.mp4',''),[date,compte,...t]=base.split('_');
+      vids.push({date,compte,titre:joli(t.join('_')),url:a.browser_download_url,mini:mini[base],taille:a.size})}}
+  vids.sort((a,b)=>b.date.localeCompare(a.date));
+  for(const c of [...new Set(vids.map(v=>v.compte))].sort()){const o=document.createElement('option');o.value=o.textContent=c;compte.appendChild(o)}
+  afficher()}
+function afficher(){
+  const c=compte.value,q=document.getElementById('q').value.toLowerCase();
+  const l=vids.filter(v=>(!c||v.compte===c)&&(!q||v.titre.toLowerCase().includes(q)));
+  document.getElementById('n').textContent=l.length+' vidéo'+(l.length>1?'s':'');
+  document.getElementById('vide').textContent=l.length?'':'Aucune vidéo pour l\'instant (la copie de l\'archive peut prendre quelques minutes).';
+  grille.innerHTML=l.map(v=>`<div class="v"><video controls preload="none" playsinline ${v.mini?`poster="${v.mini}"`:''} src="${v.url}"></video>
+    <div class="m"><b>${v.titre}</b><span>${new Date(v.date).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'})} · @${v.compte} · ${(v.taille/1e6).toFixed(1)} Mo</span><br>
+    <a href="${v.url}" download>Télécharger</a></div></div>`).join('')}
+compte.onchange=afficher;document.getElementById('q').oninput=afficher;charger();
+</script>
+</body>
+</html>
